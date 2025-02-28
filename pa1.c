@@ -72,6 +72,42 @@ void *client_thread_func(void *arg) {
      * It sends messages to the server, waits for a response using epoll,
      * and measures the round-trip time (RTT) of this request-response.
      */
+    data->socket_fd(AF_INET, SOCK_STREAM, 0); //Create socket
+    if(data->socket_fd < 0)
+    {
+        perror("Created Socket Failed");
+        return NULL;
+    }
+    data->epoll_fd = epoll_create(1);
+    event.events = EPOLLIN;
+    event.data.fd = data->socket_fd;
+    epoll_ctl(data->epoll_fd, EPOLL_CTL_ADD, data->socket_fd, &event);
+    bzero(&serverAddr, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(PORT);
+    if(inet_pton(AF_INET, server_ip, &serverAddr.sin_addr) == 0)
+    {
+        perror(server_ip);
+        exit(errno);
+    }
+    if(connect(data->socket_fd, (struct sockaddr*)&dest, sizeof(dest)) != 0)
+    {
+        if(errno != EINPROGRESS)
+        {
+            perror("Connect ");
+            exit(erno);
+        }
+    }
+
+    int num_ready = epoll_wait(data->epoll_fd, events, MAX_EVENTS, 1000/*timeout*/);
+    for(i = 0; i < num_ready; i++)
+    {
+        if(events[i].events & EPOLLIN)
+        {
+            printf("Socket %d connected \n", events[i].data.fd);
+        }
+    }
+
 
     /* TODO:
      * The function exits after sending and receiving a predefined number of messages (num_requests).
