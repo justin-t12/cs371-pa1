@@ -78,7 +78,7 @@ void *client_thread_func(void *arg) {
 
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(PORT);
+    serverAddr.sin_port = htons(server_port);
     if(inet_pton(AF_INET, server_ip, &serverAddr.sin_addr) <= 0)
     {
         perror("Invalid server IP");
@@ -143,7 +143,7 @@ void *client_thread_func(void *arg) {
                     break;
                 }
                 gettimeofday(&end, NULL);
-                rtt = (end.tv_sec - start.t_sec) * 1000000LL + (end.tv_usec - start.tv_usec)
+                rtt = (end.tv_sec - start.tv_sec) * 1000000LL + (end.tv_usec - start.tv_usec)
                 data->total_rtt += rtt;
                 data->total_messages++;
                 printf("RTT: %lld us\n", rtt);
