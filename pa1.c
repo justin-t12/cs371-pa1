@@ -222,7 +222,7 @@ void run_client() {
      long long total_rtt = 0;
      long long total_messages = 0;
      float total_request_rate = 0;
-     for(int i; i < num_client_threads; i++)
+     for(int i = 0; i < num_client_threads; i++)
      {
         total_rtt += thread_data[i].total_rtt;
         total_messages += thread_data[i].total_messages;
