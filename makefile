@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -pthread -Wall -Wextra
+CFLAGS = -pthread -Wall -Wextra -Werror -fanalyzer -O2
 SOURCES = pa1.c
 OBJECTS = $(SOURCES:.c=.o)
 EXECUTABLE = pa1
