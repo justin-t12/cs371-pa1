@@ -184,7 +184,7 @@ void run_client() {
     for(int i = 0; i < num_client_threads; i++)
     {
         thread_data[i].socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-        if(thread_data[i].socket_fd)
+        if(thread_data[i].socket_fd < 0)
         {
             perror("Created Socket Failed");
             exit(EXIT_FAILURE);
@@ -238,8 +238,14 @@ void run_client() {
         total_messages += thread_data[i].total_messages;
         total_request_rate += thread_data[i].request_rate;
      }
-
-    printf("Average RTT: %lld us\n", total_rtt / total_messages);
+    if(total_messages > 0)
+    {
+        printf("Average RTT: %lld us\n", total_rtt / total_messages);
+    }
+    else
+    {
+        printf("Average RTT: No messages sent");
+    }
     printf("Total Request Rate: %f messages/s\n", total_request_rate);
 }
 
