@@ -35,6 +35,8 @@ Please specify the group members here
 #include <sys/time.h>
 #include <pthread.h>
 
+#include <fcntl.h> // fcntl to set fd as non-blocking
+
 #define MAX_EVENTS 64
 #define MESSAGE_SIZE 16
 #define DEFAULT_CLIENT_THREADS 4
@@ -116,13 +118,155 @@ void run_server() {
      * Server registers the listening socket to epoll
      */
 
+    int server_socket_fd, epoll_fd;
+    int ret;
+    struct sockaddr_in server_addr;
+    struct epoll_event event, events[MAX_EVENTS];
+
+
+    // Set up server socket address
+    bzero((char *)&server_addr, sizeof(struct sockaddr_in));
+    server_addr.sin_family = AF_INET;
+    /* server_addr.sin_addr.s_addr = INADDR_ANY; */
+    server_addr.sin_addr.s_addr = inet_addr(server_ip);
+    server_addr.sin_port = htons(server_port);
+
+    server_socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+    if (server_socket_fd < 0) {
+        perror("Failure to create socket");
+        exit(EXIT_FAILURE);
+        /* return -1; */
+    }
+
+    ret = bind(server_socket_fd, (struct sockaddr*)&server_addr,
+                   sizeof(server_addr));
+
+    if (ret < 0) {
+        perror("Failure to bind socket fd");
+        (void)close(server_socket_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Set socket fd as nonblocking
+    fcntl(server_socket_fd, F_SETFL,
+          fcntl(server_socket_fd, F_GETFL, 0) | O_NONBLOCK);
+    listen(server_socket_fd, 16);
+
+    epoll_fd = epoll_create(1);
+
+    if (epoll_fd < 0) {
+        perror("Epoll creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    event.events = (EPOLLIN | EPOLLOUT | EPOLLET);
+    event.data.fd = server_socket_fd;
+
+    ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_socket_fd, &event);
+
+    if (ret < 0) {
+      perror("Epoll_ctl failed");
+      (void)close(epoll_fd);
+      (void)close(server_socket_fd);
+      exit(EXIT_FAILURE);
+    }
+
     /* Server's run-to-completion event loop */
     while (1) {
         /* TODO:
          * Server uses epoll to handle connection establishment with clients
          * or receive the message from clients and echo the message back
          */
+
+        char read_buffer[MESSAGE_SIZE];
+        int new_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+
+        if (new_events < 0) {
+            perror("Epoll wait failed");
+            (void)close(epoll_fd);
+            (void)close(server_socket_fd);
+            break;
+        }
+
+        for (int i = 0; i < new_events; i++) {
+            if (events[i].data.fd == server_socket_fd) {
+
+                struct sockaddr_in client_addr;
+                socklen_t client_addr_len = sizeof(client_addr);
+
+                int new_client_socket = accept(server_socket_fd,
+                                               (struct sockaddr *)&client_addr,
+                                               &client_addr_len);
+
+                if (new_client_socket < 0) {
+                    perror("New socket connection failed");
+                    continue;
+                }
+
+                // Print info about new connection
+                inet_ntop(AF_INET, (char *)&(client_addr.sin_addr), read_buffer,
+                          sizeof(client_addr));
+                printf("-> connected with %s:%d\n", read_buffer,
+                       ntohs(client_addr.sin_port));
+
+                // Set new client socket fd to nonblocking
+                fcntl(new_client_socket,
+                      F_SETFL,
+                      fcntl(new_client_socket, F_GETFL, 0) | O_NONBLOCK);
+
+                // Add client socket to epoll
+                event.events = EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP;
+                event.data.fd = new_client_socket;
+                int ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_client_socket,
+                                    &event);
+                if (ret == -1) {
+                    perror("Failed to add new client socket to epoll");
+                    close(new_client_socket);
+                }
+
+            } else if (events[i].events & EPOLLIN) {
+                bzero(read_buffer, sizeof(read_buffer));
+                int client_fd = events[i].data.fd;
+                int bytes_read = read(client_fd, read_buffer,
+                                      sizeof(read_buffer));
+
+                if (bytes_read < 0) {
+                    perror("Error reading client message");
+                    close(client_fd);
+                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
+                } else if (bytes_read > 0) {
+                    printf("-> data: ");
+                    for (int j = 0; j < MESSAGE_SIZE; j++)
+                        printf("%c", read_buffer[j]);
+                    printf("\n");
+                    printf("-> bytes read: %d\n", bytes_read);
+                    ret = write(client_fd, read_buffer, bytes_read);
+
+                    // Close client if unable to write to fd
+                    if (ret < 0) {
+                        perror("Unable to write to client fd");
+                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd,
+                                  NULL);
+                        close(events[i].data.fd);
+                        printf("-> connection closed\n");
+                    }
+                }
+            }
+            // Check if connection to client is closed
+            if (events[i].events & (EPOLLRDHUP | EPOLLHUP)) {
+                epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
+                close(events[i].data.fd);
+                printf("-> connection closed\n");
+            }
+
+        }
+
     }
+
+    // Close fds on function exit
+    close(server_socket_fd);
+    close(epoll_fd);
 }
 
 int main(int argc, char *argv[]) {
