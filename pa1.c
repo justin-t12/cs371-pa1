@@ -66,6 +66,9 @@ void *client_thread_func(void *arg) {
     char send_buf[MESSAGE_SIZE] = "ABCDEFGHIJKMLNOP"; /* Send 16-Bytes message every time */
     char recv_buf[MESSAGE_SIZE];
     struct timeval start, end;
+    long long rtt;
+    int num_ready, i;
+    struct sockaddr_in serverAddr;
 
     // Hint 1: register the "connected" client_thread's socket in the its epoll instance
     // Hint 2: use gettimeofday() and "struct timeval start, end" to record timestamp, which can be used to calculated RTT.
@@ -75,10 +78,93 @@ void *client_thread_func(void *arg) {
      * and measures the round-trip time (RTT) of this request-response.
      */
 
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(server_port);
+    if(inet_pton(AF_INET, server_ip, &serverAddr.sin_addr) <= 0)
+    {
+        perror("Invalid server IP");
+        close(data->socket_fd);
+        return NULL;
+    }
+    data->socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if(data->socket_fd < 0)
+    {
+        perror("Created Socket Failed");
+        return NULL;
+    }
+    if(connect(data->socket_fd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0)
+    {
+        perror("Connection failed");
+        close(data->socket_fd);
+        return NULL;
+    }
+
     /* TODO:
      * The function exits after sending and receiving a predefined number of messages (num_requests).
      * It calculates the request rate based on total messages and RTT
      */
+
+    data->epoll_fd = epoll_create(1);
+    if(data->epoll_fd < 0)
+    {
+        perror("Created Epoll Failed");
+        close(data->socket_fd);
+        return NULL;
+    }
+    event.events = EPOLLIN;
+    event.data.fd = data->socket_fd;
+    if(epoll_ctl(data->epoll_fd, EPOLL_CTL_ADD, data->socket_fd, &event) < 0)
+    {
+        perror("Epoll control failed");
+        close(data->socket_fd);
+        close(data->epoll_fd);
+        return NULL;
+    }
+    for(int message_count = 0; message_count < num_requests; message_count++)
+    {
+        gettimeofday(&start, NULL);
+        if(send(data->socket_fd, send_buf, MESSAGE_SIZE, 0) < 0)
+        {
+            perror("Send failed");
+            break;
+        }
+        num_ready = epoll_wait(data->epoll_fd, events, MAX_EVENTS, 1000/*timeout*/);
+        if(num_ready < 0)
+        {
+            perror("Epoll wait failed");
+            break;
+        }
+        for(i = 0; i < num_ready; i++)
+        {
+            if(events[i].events & EPOLLIN)
+            {
+                if(recv(data->socket_fd, recv_buf, MESSAGE_SIZE, 0) <= 0)
+                {
+                    perror("Receive failed");
+                    break;
+                }
+                gettimeofday(&end, NULL);
+                rtt = (end.tv_sec - start.tv_sec) * 1000000LL + (end.tv_usec - start.tv_usec);
+                data->total_rtt += rtt;
+                data->total_messages++;
+                printf("RTT: %lld us\n", rtt);
+            }
+        }
+    }
+
+    if(data->total_messages > 0)
+    {
+        data->request_rate = (float)data->total_messages / (data->total_rtt / 1000000.0);
+    }
+    else
+    {
+        data->request_rate = 0;
+    }
+
+    printf("Client thread finished. Avg RTT: %lld us, Request rate: %.2f req/s\n", data->total_messages ? data->total_rtt / data->total_messages : 0, data->request_rate);
+    close(data->socket_fd);
+    close(data->epoll_fd);
 
     return NULL;
 }
@@ -97,9 +183,42 @@ void run_client() {
      * and connect these sockets of client threads to the server
      */
 
+    for(int i = 0; i < num_client_threads; i++)
+    {
+        thread_data[i].socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if(thread_data[i].socket_fd < 0)
+        {
+            perror("Created Socket Failed");
+            exit(EXIT_FAILURE);
+        }
+        memset(&server_addr, 0, sizeof(server_addr));
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons(server_port);
+        if(inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0)
+        {
+            perror("Invalid server IP");
+            exit(EXIT_FAILURE);
+        }
+        if(connect(thread_data[i].socket_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0)
+        {
+            perror("Server Connection Failed");
+            close(thread_data[i].socket_fd);
+            exit(EXIT_FAILURE);
+        }
+        printf("Client %d connected to server\n", i);
+        thread_data[i].epoll_fd = epoll_create(1);
+        if(thread_data[i].epoll_fd < 0)
+        {
+            perror("Created Epoll Failed");
+            close(thread_data[i].socket_fd);
+            exit(EXIT_FAILURE);
+        }
+    }
+
     // Hint: use thread_data to save the created socket and epoll instance for each thread
     // You will pass the thread_data to pthread_create() as below
-    for (int i = 0; i < num_client_threads; i++) {
+    for (int i = 0; i < num_client_threads; i++) 
+    {
         pthread_create(&threads[i], NULL, client_thread_func, &thread_data[i]);
     }
 
@@ -107,7 +226,28 @@ void run_client() {
      * Wait for client threads to complete and aggregate metrics of all client threads
      */
 
-    printf("Average RTT: %lld us\n", total_rtt / total_messages);
+     for(int i = 0; i < num_client_threads; i++)
+     {
+        pthread_join(threads[i], NULL);
+     }
+
+     long long total_rtt = 0;
+     long long total_messages = 0;
+     float total_request_rate = 0;
+     for(int i; i < num_client_threads; i++)
+     {
+        total_rtt += thread_data[i].total_rtt;
+        total_messages += thread_data[i].total_messages;
+        total_request_rate += thread_data[i].request_rate;
+     }
+    if(total_messages > 0)
+    {
+        printf("Average RTT: %lld us\n", total_rtt / total_messages);
+    }
+    else
+    {
+        printf("Average RTT: No messages sent");
+    }
     printf("Total Request Rate: %f messages/s\n", total_request_rate);
 }
 
