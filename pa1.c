@@ -25,6 +25,7 @@ Please specify the group members here
 
 */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -291,7 +292,8 @@ void run_server() {
     // Set socket fd as nonblocking
     fcntl(server_socket_fd, F_SETFL,
           fcntl(server_socket_fd, F_GETFL, 0) | O_NONBLOCK);
-    listen(server_socket_fd, 16);
+
+    listen(server_socket_fd, INT32_MAX);
 
     epoll_fd = epoll_create(1);
 
@@ -300,7 +302,7 @@ void run_server() {
         exit(EXIT_FAILURE);
     }
 
-    event.events = (EPOLLIN | EPOLLOUT | EPOLLET);
+    event.events = (EPOLLIN | EPOLLOUT );
     event.data.fd = server_socket_fd;
 
     ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_socket_fd, &event);
@@ -356,7 +358,7 @@ void run_server() {
                       fcntl(new_client_socket, F_GETFL, 0) | O_NONBLOCK);
 
                 // Add client socket to epoll
-                event.events = EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP;
+                event.events = EPOLLIN | EPOLLRDHUP | EPOLLHUP;
                 event.data.fd = new_client_socket;
                 int ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_client_socket,
                                     &event);
