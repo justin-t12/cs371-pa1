@@ -143,7 +143,7 @@ void *client_thread_func(void *arg) {
                     break;
                 }
                 gettimeofday(&end, NULL);
-                rtt = (end.tv_sec - start.tv_sec) * 1000000LL + (end.tv_usec - start.tv_usec)
+                rtt = (end.tv_sec - start.tv_sec) * 1000000LL + (end.tv_usec - start.tv_usec);
                 data->total_rtt += rtt;
                 data->total_messages++;
                 printf("RTT: %lld us\n", rtt);
@@ -181,15 +181,63 @@ void run_client() {
      * and connect these sockets of client threads to the server
      */
 
+    for(int i = 0; i < num_client_threads; i++)
+    {
+        thread_data[i].socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if(thread_data[i].socket_fd)
+        {
+            perror("Created Socket Failed");
+            exit(EXIT_FAILURE);
+        }
+        memset(&server_addr, 0, sizeof(server_addr));
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons(server_port);
+        if(inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0)
+        {
+            perror("Invalid server IP");
+            exit(EXIT_FAILURE);
+        }
+        if(connect(thread_data[i].socket_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0)
+        {
+            perror("Server Connection Failed");
+            close(thread_data[i].socket_fd);
+            exit(EXIT_FAILURE);
+        }
+        printf("Client %d connected to server\n", i);
+        thread_data[i].epoll_fd = epoll_create(1);
+        if(thread_data[i].epoll_fd < 0)
+        {
+            perror("Created Epoll Failed");
+            close(thread_data[i].socket_fd);
+            exit(EXIT_FAILURE);
+        }
+    }
+
     // Hint: use thread_data to save the created socket and epoll instance for each thread
     // You will pass the thread_data to pthread_create() as below
-    for (int i = 0; i < num_client_threads; i++) {
+    for (int i = 0; i < num_client_threads; i++) 
+    {
         pthread_create(&threads[i], NULL, client_thread_func, &thread_data[i]);
     }
 
     /* TODO:
      * Wait for client threads to complete and aggregate metrics of all client threads
      */
+
+     for(int i = 0; i < num_client_threads; i++)
+     {
+        pthread_join(threads[i], NULL);
+     }
+
+     long long total_rtt = 0;
+     long long total_messages = 0;
+     float total_request_rate = 0;
+     for(int i; i < num_client_threads; i++)
+     {
+        total_rtt += thread_data[i].total_rtt;
+        total_messages += thread_data[i].total_messages;
+        total_request_rate += thread_data[i].request_rate;
+     }
 
     printf("Average RTT: %lld us\n", total_rtt / total_messages);
     printf("Total Request Rate: %f messages/s\n", total_request_rate);
