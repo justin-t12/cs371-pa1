@@ -151,7 +151,6 @@ void run_server() {
     // Set socket fd as nonblocking
     fcntl(server_socket_fd, F_SETFL,
           fcntl(server_socket_fd, F_GETFL, 0) | O_NONBLOCK);
-    // TODO: Accept connections on the socket fd
     listen(server_socket_fd, 16);
 
     epoll_fd = epoll_create(1);
