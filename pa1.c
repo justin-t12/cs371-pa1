@@ -119,6 +119,8 @@ void *client_thread_func(void *arg) {
         close(data->epoll_fd);
         return NULL;
     }
+    data->total_rtt = 0;
+    data->total_messages = 0;
     for(int message_count = 0; message_count < num_requests; message_count++)
     {
         gettimeofday(&start, NULL);
@@ -197,20 +199,8 @@ void run_client() {
             perror("Invalid server IP");
             exit(EXIT_FAILURE);
         }
-        if(connect(thread_data[i].socket_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0)
-        {
-            perror("Server Connection Failed");
-            close(thread_data[i].socket_fd);
-            exit(EXIT_FAILURE);
-        }
         printf("Client %d connected to server\n", i);
         thread_data[i].epoll_fd = epoll_create(1);
-        if(thread_data[i].epoll_fd < 0)
-        {
-            perror("Created Epoll Failed");
-            close(thread_data[i].socket_fd);
-            exit(EXIT_FAILURE);
-        }
     }
 
     // Hint: use thread_data to save the created socket and epoll instance for each thread
@@ -255,6 +245,7 @@ void run_server() {
      * Server creates listening socket and epoll instance.
      * Server registers the listening socket to epoll
      */
+ 
 
     /* Server's run-to-completion event loop */
     while (1) {
@@ -262,7 +253,9 @@ void run_server() {
          * Server uses epoll to handle connection establishment with clients
          * or receive the message from clients and echo the message back
          */
+
     }
+
 }
 
 int main(int argc, char *argv[]) {
