@@ -232,15 +232,11 @@ void run_server() {
                 int bytes_read = read(client_fd, read_buffer,
                                       sizeof(read_buffer));
 
-                if (bytes_read == 0) {
-                    // dont do anything with the buffer if nothing is sent
-                    continue;
-                } else if (bytes_read < 0) {
+                if (bytes_read < 0) {
                     perror("Error reading client message");
                     close(client_fd);
                     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
-                } else {
-                    // TODO: fix 0 bytes from being printed
+                } else if (bytes_read > 0) {
                     printf("-> data: ");
                     for (int j = 0; j < MESSAGE_SIZE; j++)
                         printf("%c", read_buffer[j]);
@@ -251,13 +247,12 @@ void run_server() {
                     // Close client if unable to write to fd
                     if (ret < 0) {
                         perror("Unable to write to client fd");
-                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
+                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd,
+                                  NULL);
                         close(events[i].data.fd);
                         printf("-> connection closed\n");
                     }
-
                 }
-
             }
             // Check if connection to client is closed
             if (events[i].events & (EPOLLRDHUP | EPOLLHUP)) {
