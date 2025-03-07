@@ -1,8 +1,8 @@
 CC = gcc
 CFLAGS = -pthread -Wall -Wextra -Werror -fanalyzer -O2
-SOURCES = pa1.c
+SOURCES = pa1_skeleton.c
 OBJECTS = $(SOURCES:.c=.o)
-EXECUTABLE = pa1
+EXECUTABLE = pa1_skeleton
 
 all: $(EXECUTABLE)
 
