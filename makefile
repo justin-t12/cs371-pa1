@@ -13,6 +13,7 @@ $(EXECUTABLE): $(OBJECTS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 debug: CFLAGS += -g -DDEBUG
+debug: CFLAGS:=$(filter-out -O2,$(CFLAGS))
 debug: clean all
 
 clean:
