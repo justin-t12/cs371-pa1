@@ -262,6 +262,8 @@ void run_client() {
         total_rtt += thread_data[i].total_rtt; //Add onto total round trip time
         total_messages += thread_data[i].total_messages; //Add onto total message count
         total_request_rate += thread_data[i].request_rate; //Add onto request rate
+        close(thread_data[i].socket_fd); //Close socket
+        close(thread_data[i].epoll_fd); //Close epoll
     }
 
     //If there are messages
